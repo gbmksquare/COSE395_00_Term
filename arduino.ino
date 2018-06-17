@@ -9,7 +9,7 @@
 #define Active True
 #define Inactive False
 
-#define IR_UNIDENTIFIED 0
+#define IR_NONE 0
 #define IR_UP 16575
 #define IR_DOWN 24735
 #define IR_LEFT 49215
@@ -23,8 +23,8 @@
 int N;
 
 // Pin
-int cdsPins[] = {A0, A1, A2, A3};
-int ledPins[] = {11, 10, 9, 6};
+int cdsPins[4] = {A0, A1, A2, A3};
+int ledPins[4] = {11, 10, 9, 6};
 int IR_pin = 8;
 
 // LCD
@@ -32,20 +32,22 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // IR
 IRrecv irrecv(IR_pin);
+int currentHoldingButton = IR_NONE;
 
 // Game settings
-int maximumConcurrentTarget = 3;
-int targetDuration = 5;
-int brightnessThreshold = 18;
-int gameMaxTime = 60;
+int maximumConcurrentTarget = 2;
+unsigned long targetDuration = 3;
+int brightnessThreshold = 120;
+unsigned long gameMaxTime = 60;
 
 // Game
 int isGameInProgress = False;
-int gameStartTime = 0;
+unsigned long gameStartTime = 0;
 int score = 0;
 
-int targetStatus[] = {Inactive, Inactive, Inactive, Inactive, Inactive};
-int targetActivatedTime[] = {0, 0, 0, 0, 0};
+int target_key_match[4] = {IR_RIGHT, IR_CENTER, IR_UP, IR_LEFT};
+int targetStatus[4] = {Inactive, Inactive, Inactive, Inactive};
+unsigned long targetActivatedTime[4] = {0, 0, 0, 0};
 int targetCount = 0;
 
 // -------------------- Declaration --------------------
@@ -85,18 +87,18 @@ void setup() {
 }
 
 void loop() {
+	unsigned long currentTime = millis();
+
 	// Get IR signal
 	int code = receiveIrSignal();
 	handleIrSignal(code);
 
-	// End game after some time
-	if (gameStartTime - millis() > gameMaxTime*1000.0) {
-		endGame();
-	}
-
 	// Game running
 	if (isGameInProgress == true) {
-		handleGame(code);
+		handleGame(currentTime);
+		if (currentTime > gameStartTime && currentTime - gameStartTime > gameMaxTime * 1000.0) {
+			endGame();
+		}
 	}
 }
 
@@ -136,6 +138,10 @@ void startGame() {
 void endGame() {
 	isGameInProgress = False;
 
+	for(int i = 0; i < N; i++) {
+		turnOffLed(ledPins[i]);
+	}
+
 	Serial.println("Game ended!");
 	Serial.print("You scored ");
 	Serial.print(score);
@@ -147,63 +153,64 @@ void endGame() {
 	printLcd(1, string);
 }
 
-void handleGame(int irCode) {
-
-	int currentTime = millis();
-  
+void handleGame(int currentTime) {  
    // Detect if target is hit
-   for (int i=0; i<N; i++){
-    if (targetStatus[i] == Active) {
-      if (detectHitTarget(i)) {
-        targetStatus[i] = Inactive;
-        targetCount--;
-        turnOffLed(ledPins[i]);
-        increaseScore();
-      }
-    }
+   for (int i = 0; i < N; i++){
+	   if (targetStatus[i] == Active) {
+		   if (detectHitTarget(i)) {
+				targetStatus[i] = Inactive;
+				targetCount -= 1;
+				turnOffLed(ledPins[i]);
+				increaseScore();
+				clearLcd();
+				printCurrentScore();
+			}
+		}
    }
    
-  // If hit, add new target, add score
-
-   for (int i=0; i<N; i++){
-    if (targetStatus[i] == Active && millis() - targetActivatedTime[i] > targetDuration * 1000.0) {
-      targetStatus[i] = Inactive;
-      targetCount--;
-      turnOffLed(ledPins[i]);
-    }
+	// Phase out unhit targets 
+	for (int i = 0; i < N; i++) {
+		if (targetStatus[i] == Active && currentTime - targetActivatedTime[i] > targetDuration * 1000) {
+			targetStatus[i] = Inactive;
+			targetCount -= 1;
+			turnOffLed(ledPins[i]);
+		}
    }  
 
-   // Add new target if necessary
+	// Serial.print("HOLDING BUTTON : ");
+	// Serial.println(currentHoldingButton);
+
+   // Add a new target if necessary
    if (targetCount < maximumConcurrentTarget) {
-	addRandomTarget();
+	addRandomTarget(currentTime);
    }
 }
 
-void addRandomTarget() {
+void addRandomTarget(int currentTime) {
 	int target;
-	
 	do {
-		target = random(0, N-1);	
+		target = random(0, N);	
 	} while(targetStatus[target] == Active);
 
 	targetStatus[target] = Active;
-	targetActivatedTime[target] = millis();
-	targetCount++;
-	turnOnLed(target);
+	targetActivatedTime[target] = currentTime;
+	targetCount += 1;
+	turnOnLed(ledPins[target]);
 }
 
 int detectHitTarget(int targetIndex) {
-	// return (getBrightness(pin) > brightnessThreshold ) ? True : False;
-
-
-	int target_key_match[5] ={IR_UP, IR_LEFT, IR_CENTER, IR_RIGHT, IR_DOWN};
-  
-  if(receiveIrSignal() == target_key_match[targetIndex]) {
-    return True;
-  }
-  else {
-    return False;
-  }
+	// by Laser
+	if(getBrightness(cdsPins[targetIndex]) > brightnessThreshold) {
+		irrecv.resume();
+		return True;
+	}
+  	// by IR
+	else if (currentHoldingButton == target_key_match[targetIndex]) {
+		currentHoldingButton = IR_NONE;
+		return True;
+	} else {
+		return False;
+	}
 }
 
 // -------------------- Score --------------------
@@ -225,8 +232,6 @@ void printCurrentScore() {
 	printLcd(1, string);
 }
 
-
-
 // -------------------- CDS --------------------
 int getBrightness(int pin) {
 	return analogRead(pin);
@@ -234,13 +239,13 @@ int getBrightness(int pin) {
 
 // -------------------- LED --------------------
 void turnOnLed(int pin) {
-	// digitalWrite(pin, ON);
-	analogWrite(pin, 255);
+	digitalWrite(pin, ON);
+	// analogWrite(pin, 50);
 }
 
 void turnOffLed(int pin) {
-	// digitalWrite(pin, OFF);
-	analogWrite(pin, 0);
+	digitalWrite(pin, OFF);
+	// analogWrite(pin, 0);
 }
 
 // -------------------- IR --------------------
@@ -255,7 +260,7 @@ int receiveIrSignal() {
     	irrecv.resume();
 		return code;
 	} else {
-		return IR_UNIDENTIFIED;
+		return IR_NONE;
 	}
 }
 
@@ -263,27 +268,34 @@ void handleIrSignal(int code) {
 	switch (code) {
 		case IR_UP: 
 		Serial.println("UP");
+		currentHoldingButton = IR_UP;
 		break;
 		case IR_DOWN:
 		Serial.println("DOWN");
+		currentHoldingButton = IR_DOWN;
 		break;
 		case IR_LEFT:
 		Serial.println("LEFT");
+		currentHoldingButton = IR_LEFT;
 		break;
 		case IR_RIGHT:
 		Serial.println("RIGHT");
+		currentHoldingButton = IR_RIGHT;
 		break;
 		case IR_CENTER:
 		Serial.println("CENTER");
+		currentHoldingButton = IR_CENTER;
 		break;
 		case IR_B:
 		Serial.println("B");
+		currentHoldingButton = IR_B;
 		if (isGameInProgress == False) {
 			startGame();
 		}
 		break;
 		case IR_V:
 		Serial.println("V");
+		currentHoldingButton = IR_V;
 		if (isGameInProgress == True) {
 			endGame();
 		}
@@ -291,7 +303,7 @@ void handleIrSignal(int code) {
 		case IR_HOLD:
 		Serial.println("HOLD");
 		break;
-		case 0: // None
+		case IR_NONE: // None
 		break;
 		default: 
 		Serial.print("Unknown code : ");
