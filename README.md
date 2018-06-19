@@ -10,9 +10,9 @@ by [BumMo Koo](https://github.com/gbmksquare) and [BeomJin Ahn](https://github.c
 
 
 
-## Demo
+## Demo Video
 
-<a href="http://www.youtube.com/watch?feature=player_embedded&v=31rE3fBkwqo" target="_blank"><img src="http://img.youtube.com/vi/31rE3fBkwqo/0.jpg" 
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=31rE3fBkwqo" target="_blank"><img src="./images/BMA01330.jpg" 
 alt="video" width="240" height="180" border="10" /></a>
 
 ## Images
